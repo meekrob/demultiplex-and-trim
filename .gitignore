@@ -1,3 +1,6 @@
+# big files
+*.fastq
+
 # Prerequisites
 *.d
 
