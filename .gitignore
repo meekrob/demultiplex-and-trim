@@ -1,3 +1,6 @@
+# compilation target
+demultiplex_and_trim
+
 # big files
 *.fastq
 
