@@ -1,5 +1,7 @@
-# compilation target
+# compilation targets
 demultiplex_and_trim
+phred
+threebit
 
 # big files
 *.fastq

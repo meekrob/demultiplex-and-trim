@@ -1,5 +1,37 @@
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <string.h>
+#include <strings.h> // for bzero
+
+#define _X 0x0
+#define _A 0x1 // 001
+#define _C 0x2 // 010
+#define _G 0x3 // 011
+#define _T 0x4 // 100
+#define _N 0x5 // 101
+
+const char LOOKUP[] = {
+_X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
+_X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
+_X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
+_X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
+_X, _A, _X, _C, _X, _X, _X, _G, _X, _X, _X, _X, _X, _X, _N, _X,
+_X, _X, _X, _X, _T, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
+_X, _A, _X, _C, _X, _X, _X, _G, _X, _X, _X, _X, _X, _X, _N, _X,
+_X, _X, _X, _X, _T, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X
+};
+
+int encode(char* sequence, int len)
+{
+    int index = 0;
+    for (int i = 0; i < len; i++)
+    {
+        index |= LOOKUP[(int)sequence[i]] << 3*i;
+    }
+    return index;
+}
+
 #define max(a,b) (a>b?a:b)
 struct barcode 
 {
@@ -51,6 +83,11 @@ struct barcode * read_barcode_file(char* filename)
             free(newbarcode);
             break; 
         }
+        else if (newbarcode->name[0] == '#') // parsed a header
+        {
+            free(newbarcode);
+            continue; 
+        }
         *nextptr = newbarcode;
         nextptr = &(newbarcode->next);
         sprintf(newbarcode->outfilename, "%s.trimmed.fastq", newbarcode->name);
@@ -80,6 +117,8 @@ int main(int argc, char **argv)
     if (argc == 1) 
     {
         printf("%s sample.fastq barcode.txt\n", argv[0]);
+        printf("To pipe to this command, do something like:\n");
+        printf("\tzcat file.fastq.gz | %s /dev/stdin barcode.txt\n", argv[0]);
         return 0;
     }
     // argv[1]: fastq file
@@ -95,15 +134,26 @@ int main(int argc, char **argv)
         bc_head = bc_head->next;
     }
     printf("max_barcode_len = %d\n", max_barcode_len);
+    int score_index_size = 1 << 3*max_barcode_len;
+    printf("max_barcode_len = %d. Size of score array: %d\n", max_barcode_len, score_index_size);
+    struct barcode ** score_table = malloc(sizeof(struct barcode*)*score_index_size);
+    bzero(score_table, sizeof(struct barcode*)*score_index_size);
+    
 
-    FILE* unmatched_out = fopen("unmatched.fastq", "w");
+    // "unmatched" barcode obj
+    struct barcode unmatched_bc = {
+        "unmatched", "", // name, barcode
+        0, NULL, 0, // length, next, count
+        "unmatched.fastq", NULL // outfilename, outfile*
+    };
+    unmatched_bc.outfile = fopen(unmatched_bc.outfilename, "w");
 
     char header[128];
     char basecall[128];
     char plussign[128];
     char quality[128];
-    int unmatched_count = 0;
     int nseq = 0;
+    int lookups = 0;
     while (!feof(infile))
     {
         if(fgets(header, 128, infile)==NULL) break;
@@ -112,9 +162,23 @@ int main(int argc, char **argv)
         if(fgets(quality, 128, infile)==NULL) break;
         // otherwise, we have a full fastq
         nseq++;
-        //printf("seq %d: %s\n", nseq, basecall);
+        int index = encode(basecall, max_barcode_len);
+        if (score_table[index] == NULL)
+        {
+            struct barcode * bc = match_barcode(bc_list, basecall, 1);
+            score_table[index] = (bc!=NULL) ? bc : &unmatched_bc;
+            lookups++;
+        }
+        struct barcode * match = score_table[index];
+        match->count++;
+        fputs(header, match->outfile);
+        fputs(&basecall[match->taglen], match->outfile);
+        fputs(plussign, match->outfile);
+        fputs(&quality[match->taglen], match->outfile);
+
+        /*
         struct barcode * bc = match_barcode(bc_list, basecall, 1);
-        //printf("%s: ", basecall);
+
         if (bc)
         {
             //printf("%s\n", bc->name);
@@ -127,17 +191,21 @@ int main(int argc, char **argv)
         else
         {
             //printf("unmatched\n");
-            unmatched_count++;
-            fputs(header, unmatched_out);
-            fputs(basecall, unmatched_out);
-            fputs(plussign, unmatched_out);
-            fputs(quality, unmatched_out);
+            unmatched_bc.count++;
+            fputs(header, unmatched_bc.outfile);
+            fputs(basecall, unmatched_bc.outfile);
+            fputs(plussign, unmatched_bc.outfile);
+            fputs(quality, unmatched_bc.outfile);
         }
+*/
     }
     fclose(infile);
 
     print_and_free_barcodes(bc_list);
-    printf("%d were unmatched\n", unmatched_count);
-    fclose(unmatched_out);
+    printf("%ld were unmatched\n", unmatched_bc.count);
+    printf("performed %d lookups for all %d seqs\n", lookups, nseq);
+    fclose(unmatched_bc.outfile);
+    free(score_table);
     return 0;
+
 }
