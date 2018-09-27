@@ -1,3 +1,14 @@
+/* demultiplex_and_trim.c 
+ *  David C. King. Copyright 2018.
+ *  A single pass through a big fastq file that has indices attached on the 5' of each read:
+ *   Separate reads (four lines) into files as directed by a barcode file of the format:
+ *    name\tbarcode
+ *   Where barcode is a sequence of 7-8 nt in {A,C,G,T}.
+ *  
+ *  Fastq files are described here: 
+ *  http://support.illumina.com/content/dam/illumina-support/help/BaseSpaceHelp_v2/Content/Vault/Informatics/Sequencing_Analysis/BS/swSEQ_mBS_FASTQFiles.htm
+ *  
+**/
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -10,6 +21,7 @@
 #define _G 0x3 // 011
 #define _T 0x4 // 100
 #define _N 0x5 // 101
+
 
 const char LOOKUP[] = {
 _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X, _X,
@@ -71,6 +83,9 @@ struct barcode * new_barcode()
 }
 struct barcode * read_barcode_file(char* filename)
 {
+// read_barcode_file - Read barcodes into a linked list.
+//
+//
     FILE *in = fopen(filename, "r");
     int i = 0;
     struct barcode * headptr = NULL;
@@ -78,7 +93,7 @@ struct barcode * read_barcode_file(char* filename)
     while (!feof(in)) 
     {
         struct barcode *newbarcode = new_barcode();
-        if (fscanf(in, "%s\t%s", newbarcode->name, newbarcode->tag) != 2) 
+        if (fscanf(in, "%s\t%s", newbarcode->name, newbarcode->tag) != 2) // read was incomplete or failed
         { 
             free(newbarcode);
             break; 
@@ -88,10 +103,10 @@ struct barcode * read_barcode_file(char* filename)
             free(newbarcode);
             continue; 
         }
-        *nextptr = newbarcode;
-        nextptr = &(newbarcode->next);
-        sprintf(newbarcode->outfilename, "%s.trimmed.fastq", newbarcode->name);
-        newbarcode->taglen = strlen(newbarcode->tag);
+        *nextptr = newbarcode; // acting as headptr, or last_el->next, now POINT to the new element
+        nextptr = &(newbarcode->next); // become last_el->next
+        sprintf(newbarcode->outfilename, "%s.trimmed.fastq", newbarcode->name); // create the outfile name
+        newbarcode->taglen = strlen(newbarcode->tag); 
         newbarcode->outfile = fopen(newbarcode->outfilename, "w");
         printf("%d: %s[%s] -> %s\n", i, newbarcode->name, newbarcode->tag, newbarcode->outfilename);
         i++;    
@@ -175,29 +190,6 @@ int main(int argc, char **argv)
         fputs(&basecall[match->taglen], match->outfile);
         fputs(plussign, match->outfile);
         fputs(&quality[match->taglen], match->outfile);
-
-        /*
-        struct barcode * bc = match_barcode(bc_list, basecall, 1);
-
-        if (bc)
-        {
-            //printf("%s\n", bc->name);
-            bc->count++;
-            fputs(header, bc->outfile);
-            fputs(&basecall[bc->taglen], bc->outfile);
-            fputs(plussign, bc->outfile);
-            fputs(&quality[bc->taglen], bc->outfile);
-        }
-        else
-        {
-            //printf("unmatched\n");
-            unmatched_bc.count++;
-            fputs(header, unmatched_bc.outfile);
-            fputs(basecall, unmatched_bc.outfile);
-            fputs(plussign, unmatched_bc.outfile);
-            fputs(quality, unmatched_bc.outfile);
-        }
-*/
     }
     fclose(infile);
 
