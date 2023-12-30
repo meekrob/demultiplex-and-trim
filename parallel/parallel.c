@@ -4,7 +4,17 @@
 #include <zlib.h>
 
 #define CHUNK_SIZE 1024 * 1024 * 1024  // 1 GB
+/*
+Dialog with chstGPT to use the pthread library 
+to process a gzipped file piecewise and in parallel. 
 
+It took some finagling to get the it to read the 
+a prescribed amount of gzipped data into shared memory 
+and then launch the threads on different portions of that
+shared buffer.
+
+The process repeats until the gzipped file is consumed. 
+*/
 // Data structure to pass to each thread
 struct ThreadData {
     int threadId;
